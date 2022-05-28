@@ -118,7 +118,6 @@ def is_unique_connection(connection, connections):
 
 def mutation_of(brainl):
     brain = copy.deepcopy(brainl)
-    print("will make mutation")
     #now make random nodes. 1new layer 2existing layer 3-6nothing
     switch = random.randint(0,5)
     if(switch == 0):
@@ -143,7 +142,6 @@ def mutation_of(brainl):
         for connection_id in range(len(brain.connections)):
             connection = brain.connections[connection_id]
             if(connection.from_id == random_to_delete or connection.to_id == random_to_delete):
-                print("append connection to id", random_to_delete, connection.from_id, connection.to_id)
                 to_delete.append(connection_id)
         cache_list = []
         for i in range(len(brain.connections)):

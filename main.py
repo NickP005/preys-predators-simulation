@@ -3,6 +3,7 @@ import random, math, copy
 import brain as neural_brain
 import numpy as np
 import time
+import threading
 
 SCREEN_WIDTH = 2800
 SCREEN_HEIGHT = 1600
@@ -74,7 +75,7 @@ def death_ray(start_coord, shift, distance):
     for dist in range(distance):
         x = int(start_coord.x + computed_cos * (dist+shift)) % SCREEN_WIDTH
         y = int(start_coord.y + computed_sin * (dist+shift)) % SCREEN_HEIGHT
-        if(window.get_at((x,y)) == (0, 255, 0, 255) and victim_coord == False):
+        if(window.get_at((x,y)) == (0, 255, 0, 255)):
             victim_coord = (x,y)
         pygame.draw.rect(window,(0,0,255),[x,y,1,1])
     return victim_coord
@@ -94,32 +95,60 @@ def raycast(start_coord, shift, distance, interval, search_for):
             pygame.draw.rect(window,(250,0,0),[x,y,1,1])
     return -400
 
+class compute_brain(threading.Thread):
+   def __init__(self, individuo):
+      threading.Thread.__init__(self)
+      self.individuo = individuo
+   def run(self):
+      input_data = []
+      input_data = input_data + self.individuo.raycasted + self.individuo.rays
+      input_data = input_data + [self.individuo.speed_x, self.individuo.speed_y]
+      input_data.append(self.individuo.coord.a)
+      input_data.append(self.individuo.energy)
+      output = self.individuo.brain.compute_output(input_data)
+      self.individuo.accelleration = output[0]
+      if(self.individuo.accelleration > 2):
+          self.individuo.accelleration = 2
+      self.individuo.coord.a += output[1] % 360
+
 def compute_brains():
+    threads = []
     for individuo in lista_individui:
-        input_data = []
-        input_data = input_data + individuo.raycasted + individuo.rays
-        input_data = input_data + [individuo.speed_x, individuo.speed_y]
-        input_data.append(individuo.coord.a)
-        input_data.append(individuo.energy)
-        output = individuo.brain.compute_output(input_data)
-        individuo.accelleration = output[0]
-        if(individuo.accelleration > 2):
-            individuo.accelleration = 2
-        individuo.coord.a += output[1] % 360
+        thread = compute_brain(individuo)
+        threads.append(thread)
+    for thread in threads:
+        thread.start()
 
 #compute the next frame location
 #consider accelleration and friction
-def make_move():
-    for individuo in lista_individui:
+threadLock = threading.Lock()
+
+class compute_move(threading.Thread):
+    def __init__(self, individuo):
+        threading.Thread.__init__(self)
+        self.individuo = individuo
+    def run(self):
+        threadLock.acquire()
+        individuo = self.individuo
         individuo.speed_x += math.cos(math.radians(individuo.coord.a)) * individuo.accelleration
         individuo.speed_y += math.sin(math.radians(individuo.coord.a)) * individuo.accelleration
-        individuo.speed_x *= 0.2
-        individuo.speed_y *= 0.2
+        individuo.speed_x *= 0.25
+        individuo.speed_y *= 0.25
         individuo.coord.x = (individuo.coord.x - individuo.speed_x ) % SCREEN_WIDTH
         individuo.coord.y = (individuo.coord.y - individuo.speed_y ) % SCREEN_HEIGHT
+        threadLock.release()
+def make_move():
+    threads = []
+    for individuo in lista_individui:
+        thread = compute_move(individuo)
+        threads.append(thread)
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
 
 def check_deaths():
-    global lista_individui, max_predator_score, best_predator
+    global lista_individui, max_predator_score, best_predator, longest_predator
     to_delete_indexes = []
     for posizione in range(len(lista_individui)):
         individuo = lista_individui[posizione]
@@ -146,12 +175,16 @@ def check_deaths():
             if(individuo.score > max_predator_score):
                 max_predator_score = individuo.score
                 best_predator = copy.deepcopy(individuo)
+                best_predator.energy = 400
                 print(max_predator_score)
                 for id, node in individuo.brain.nodes.items():
                     print("#",id, " ", node.value)
                 print("CONNECTIONS")
                 for connection in individuo.brain.connections:
                     print("#",connection.from_id, " -> #", connection.to_id, " ", connection.weight)
+            brain_size = len(individuo.brain.connections)
+            if(max_brain_score < brain_size):
+                longest_predator = copy.deepcopy(individuo)
             break
     cache_list = []
     for i in range(len(lista_individui)):
@@ -177,7 +210,6 @@ def make_childrens():
     for il in range(lunghezza):
         individuoo = copy.copy(lista_individui[il])
         if(individuoo.type == 0 and individuoo.energy > 410 and individuoo.last_eat == 0):
-            print("energua maggiore")
             nuovo_individuo = individuo(0)
             nuovo_individuo.brain = neural_brain.mutation_of(copy.deepcopy(individuoo.brain))
             nuovo_individuo.rays = copy.deepcopy(individuoo.rays)
@@ -192,7 +224,6 @@ def make_childrens():
             individuoo.last_eat = 600
             continue
         elif(individuoo.type == 1 and individuoo.energy > 380):
-            print("energua maggiore", individuoo.energy)
             nuovo_individuo = individuo(1)
             nuovo_individuo.brain = neural_brain.mutation_of(copy.copy(individuoo.brain))
             nuovo_individuo.coord = copy.copy(individuoo.coord)
@@ -221,6 +252,8 @@ def randomize_rays(rays):
 predatori = 0
 max_predator_score = 0
 best_predator = None
+max_brain_score = 0
+longest_predator = None
 
 def many_predators():
     global predatori
@@ -237,6 +270,7 @@ pygame.display.set_caption('Snake game by Edureka')
 game_over=False
 pygame.init()
 my_font = pygame.font.SysFont('font.ttf', 30)
+clock = pygame.time.Clock()
 
 while not game_over:
     for event in pygame.event.get():
@@ -252,11 +286,13 @@ while not game_over:
                 do_fast = not do_fast
             #lista_individui[0].coord.x = event.pos[0]
             #lista_individui[0].coord.y = event.pos[1]
-    oggetto = pygame.time.Clock()
+    """
     if(do_fast):
         oggetto.tick(280)
     else:
         oggetto.tick(40)
+    """
+    clock.tick(120)
     window.fill((255, 255, 255))
     disegna_individui()
     check_deaths()
@@ -266,7 +302,12 @@ while not game_over:
     make_childrens()
     many_predators()
     if(predatori == 0): #disabilitare se si vuole più realistico
-        lista_individui.append(best_predator)
-    text_surface = my_font.render(str(predatori) + ' - ' + str(len(lista_individui)-predatori) + ' - '+ str(len(lista_individui)), False, (0, 0, 0))
+        lista_individui.append(copy.deepcopy(best_predator))
+        lista_individui.append(copy.deepcopy(longest_predator))
+        lista_individui.append(individuo())
+        lista_individui.append(copy.deepcopy(best_predator))
+        lista_individui.append(copy.deepcopy(longest_predator))
+        lista_individui.append(individuo())
+    text_surface = my_font.render(str(predatori) + ' - ' + str(len(lista_individui)-predatori) + ' - '+ str(len(lista_individui)) + ' | ' + str(clock.get_fps()) + ' FPS', False, (0, 0, 0))
     window.blit(text_surface, (40, 10))
     pygame.display.update()
