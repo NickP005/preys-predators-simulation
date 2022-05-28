@@ -119,7 +119,7 @@ def make_move():
         individuo.coord.y = (individuo.coord.y - individuo.speed_y ) % SCREEN_HEIGHT
 
 def check_deaths():
-    global lista_individui, max_predator_life
+    global lista_individui, max_predator_score, best_predator
     to_delete_indexes = []
     for posizione in range(len(lista_individui)):
         individuo = lista_individui[posizione]
