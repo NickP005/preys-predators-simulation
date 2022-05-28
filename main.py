@@ -145,7 +145,7 @@ def check_deaths():
             to_delete_indexes.append(posizione)
             if(individuo.score > max_predator_score):
                 max_predator_score = individuo.score
-                best_predator = copy.deepcopy(individuo.score)
+                best_predator = copy.deepcopy(individuo)
                 print(max_predator_score)
                 for id, node in individuo.brain.nodes.items():
                     print("#",id, " ", node.value)
